@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>🐾 Furever Home — encrypted pet-adoption check</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>🐾 Furever Home</h1>
+  <p class="lead">Which pet is right for you? Answer a few questions and find out —
+     while your answers stay <b>encrypted the whole time</b>. The matching runs on
+     Fully Homomorphic Encryption, right in the browser.</p>
+
+  <div class="petrow" id="petrow"></div>
+
+  <p>The demo has <b>two roles</b>. Run them on one device, or do the survey on
+     your phone and the checking on a friend's — the checker only ever sees
+     ciphertext, never your answers.</p>
+
+  <div class="role">
+    <div class="card">
+      <h2>📝 Survey <span class="sub">— your device</span></h2>
+      <p>Answer 12 quick questions. Your device makes the keys, encrypts your
+         answers, and hands the checker a bundle. Your <b>secret key never
+         leaves this page</b>. Decrypt your result here when it comes back.</p>
+      <p><a href="survey.html">Start the survey →</a></p>
+    </div>
+    <div class="card">
+      <h2>🔒 Checker <span class="sub">— the “server”</span></h2>
+      <p>Scores an applicant on <b>encrypted</b> answers, with <b>no secret
+         key</b> — it can't read the answers or the result it produces.</p>
+      <p><a href="checker.html">Open the checker →</a></p>
+    </div>
+  </div>
+
+  <p class="note">A fun pre-check, not a real adoption decision. FHE protects
+     your inputs during the computation; it doesn't verify the checker computed
+     honestly. (See DESIGN_NOTES for the honest threat model.)</p>
+
+  <script src="app.js"></script>
+  <script>
+    document.getElementById("petrow").innerHTML = Furever.PETS.map(p =>
+      `<div class="pp">${Furever.petAvatar(p)}<span class="nm">${p.name}</span><span class="sb">${p.sub}</span></div>`
+    ).join("");
+  </script>
+</body>
+</html>

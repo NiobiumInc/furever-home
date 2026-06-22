@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Furever Home — OpenFHE CKKS in your browser (WASM spike)</title>
+  <style>
+    body { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+           background:#0b0b0b; color:#e6e6e6; padding:2rem; line-height:1.5; }
+    h2 { font-weight:600; }
+    #status { font-size:1.1rem; }
+    .run { color:#f5a623; } .ok { color:#39d353; } .fail { color:#ff5c5c; }
+    pre { background:#161616; padding:1rem 1.25rem; border-radius:10px;
+          white-space:pre-wrap; border:1px solid #262626; min-height:2rem; }
+    .sub { color:#9a9a9a; }
+  </style>
+</head>
+<body>
+  <h2>🐾 Furever Home — OpenFHE CKKS running entirely in your browser</h2>
+  <p class="sub">No server, no secret key sent anywhere — this page runs the same
+     encrypted circuit (N=16384, depth 2) the CLI uses, compiled to WebAssembly.</p>
+  <p id="status" class="run">⏳ running the encrypted circuit in WASM…</p>
+  <pre id="out"></pre>
+
+  <!-- Mirror the wasm's console output onto the page. (Emscripten routes
+       stdout to console.log; overriding console is more robust across
+       Emscripten versions than predefining Module.print.) -->
+  <script>
+    (function () {
+      var out = document.getElementById('out');
+      var status = document.getElementById('status');
+      function show(t) {
+        out.textContent += t + "\n";
+        if (/SELFTEST_OK/.test(t)) { status.textContent = "✅ It ran — in your browser, on WebAssembly."; status.className = "ok"; }
+        if (/SELFTEST_FAIL/.test(t)) { status.textContent = "❌ selftest failed"; status.className = "fail"; }
+      }
+      var _log = console.log.bind(console), _err = console.error.bind(console);
+      console.log = function () { show(Array.prototype.join.call(arguments, ' ')); _log.apply(console, arguments); };
+      console.error = function () { show(Array.prototype.join.call(arguments, ' ')); _err.apply(console, arguments); };
+    })();
+  </script>
+  <script src="selftest_web.js"></script>
+</body>
+</html>

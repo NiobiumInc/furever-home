@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Furever Home — Survey (your device)</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>📝 Survey <span class="sub">— your device (holds your secret key)</span></h1>
+  <p class="sub"><a href="index.html">← back</a> · Your answers are encrypted here
+     before anything leaves the page.</p>
+
+  <div class="card">
+    <h2>1. Answer 12 questions</h2>
+    <div id="questions"></div>
+  </div>
+
+  <div class="card">
+    <h2>2. Encrypt &amp; make the bundle for the checker</h2>
+    <button id="go">🔑 Generate keys &amp; encrypt my answers</button>
+    <p id="encStatus" class="status"></p>
+    <div id="bundleInfo"></div>
+    <p><button id="downloadBundle" class="secondary" type="button" disabled>⬇️ Download bundle file</button>
+       <span class="note">— only for the offline hand-off (AirDrop / upload). Skip it if you’re using the QR below.</span></p>
+  </div>
+
+  <div class="card">
+    <h2>2b. …or send it to a friend’s device (QR)</h2>
+    <p class="note">Uploads the bundle (no secret key) to a local relay and shows
+       a QR. Your friend scans it, the checker runs in <i>their</i> browser, and
+       the encrypted result comes back here automatically. (Open this page via
+       your machine’s network address, not localhost, so the QR is scannable.)</p>
+    <button id="sendFriend" type="button">📡 Send to a friend’s device</button>
+    <p id="relayStatus" class="status"></p>
+    <div id="qr"></div>
+    <p class="note">🔒 Don’t want to route anything through the relay? Use the
+       <b>Download bundle file</b> button above and hand it to your friend yourself
+       — then nothing touches a server. (Either way the relay only ever holds
+       ciphertext + public keys, never your secret key, and your friend’s device
+       does the computing.)</p>
+  </div>
+
+  <details class="proof" id="proofPanel">
+    <summary>How do I know this is actually private?</summary>
+    <div id="proofBody" class="note">Run step 2 (encrypt) first, then expand this to see exactly what leaves your device.</div>
+  </details>
+
+  <div class="card">
+    <h2>3. Get your result</h2>
+    <p class="note">The checker returns an <b>encrypted</b> result — gibberish
+       until you open it with your secret key, which lives only on this device
+       (and is remembered in your browser, so you can leave and come back).</p>
+    <p id="keyState" class="note"></p>
+    <p id="resultState" class="status">No result yet — send your bundle to the
+       checker (QR or file); its encrypted result will arrive here.</p>
+    <button id="reveal" type="button" disabled>🔓 Decrypt &amp; reveal my result</button>
+    <details>
+      <summary class="note">Got a result <i>file</i> from your friend? (offline hand-off)</summary>
+      <input type="file" id="resultFile" accept="application/json,.json">
+    </details>
+    <p id="decStatus" class="status"></p>
+    <div id="scorecard"></div>
+    <p><button id="forget" class="secondary" type="button">Forget my key</button></p>
+  </div>
+
+  <script src="wasm/fhe.js"></script>
+  <script src="vendor/qrcode.js"></script>
+  <script src="app.js"></script>
+  <script>
+    let keys = null;             // {cc,pk,sk,mk,rk} — sk stays in memory, never bundled
+    let lastBundle = null;       // the most recent bundle (for the relay/QR path)
+    let pendingResult = null;    // encrypted result waiting to be revealed
+    let pollTimer = null;
+    const $ = id => document.getElementById(id);
+
+    function buildQuestions() {
+      const host = $("questions");
+      Furever.QUESTIONS.forEach(([prompt, labels], i) => {
+        const wrap = document.createElement("div"); wrap.className = "q"; wrap.id = "q" + i;
+        const lab = document.createElement("span"); lab.className = "qlabel"; lab.textContent = `Q${i + 1}. ${prompt}`;
+        const opts = document.createElement("div"); opts.className = "opts";
+        labels.forEach((t, v) => {
+          const o = document.createElement("button");
+          o.type = "button"; o.className = "opt" + (v === 2 ? " sel" : "");   // default = middle
+          o.dataset.v = v; o.innerHTML = `<span class="n">${v}</span>${t}`;
+          o.addEventListener("click", () => {
+            opts.querySelectorAll(".opt").forEach(x => x.classList.remove("sel"));
+            o.classList.add("sel");
+          });
+          opts.append(o);
+        });
+        wrap.append(lab, opts); host.append(wrap);
+      });
+    }
+    const readAnswers = () => Furever.QUESTIONS.map((_, i) => +document.querySelector(`#q${i} .opt.sel`).dataset.v);
+
+    async function go() {
+      const s = $("encStatus"); s.className = "status"; $("go").disabled = true;
+      try {
+        s.textContent = "🔑 generating your keypair in your browser…";
+        keys = await Furever.keygen(false);
+        // Remember just cc + sk on THIS device so the decrypt panel still works
+        // after you visit the checker and come back. (Never bundled, never sent.)
+        try { localStorage.setItem("furever_cc", keys.cc); localStorage.setItem("furever_sk", keys.sk); } catch (_) {}
+        refreshKeyState();
+        s.textContent = "🔒 encrypting your answers…";
+        const answers = readAnswers();
+        const answersBlob = await Furever.encrypt(keys.cc, keys.pk, answers);
+        const bundle = Furever.makeBundle(keys, answersBlob);   // NO sk
+        lastBundle = bundle;
+        const total = ["cc", "pk", "mk", "rk", "answers"].reduce((n, k) => n + Furever.b64bytes(bundle[k]), 0);
+        $("bundleInfo").innerHTML =
+          `<p class="status ok">✅ encrypted. Bundle ready (${Furever.humanBytes(total)}).</p>` +
+          `<div class="keylist mono">bundle contents:<br>` +
+          `&nbsp;cc, pk, mk, rk &nbsp;<span class="has">(public / evaluation keys — safe to share)</span><br>` +
+          `&nbsp;answers &nbsp;<span class="has">(your encrypted answers — gibberish)</span><br>` +
+          `&nbsp;<span class="no">sk (secret key): NOT included — it never leaves this page</span></div>` +
+          `<p class="note">Now hand it to the checker — use “Send to a friend’s device” (QR) below, or download the file for an offline hand-off.</p>`;
+        $("downloadBundle").disabled = false;
+        $("proofBody").innerHTML = proofHtml(bundle);
+        $("reEnc").addEventListener("click", proveRandomized);
+        s.textContent = "";
+      } catch (e) {
+        s.className = "status err"; s.textContent = "error: " + (e.message || e);
+      } finally { $("go").disabled = false; }
+    }
+
+    function refreshKeyState() {
+      const have = keys || localStorage.getItem("furever_sk");
+      $("keyState").textContent = have ? "🔑 your key is remembered on this device." : "🔑 no key yet — do step 2 first.";
+    }
+
+    async function decryptObj(res) {
+      const s = $("decStatus"); s.className = "status";
+      if (!keys) {                                  // recover key after navigating away
+        const cc = localStorage.getItem("furever_cc"), sk = localStorage.getItem("furever_sk");
+        if (cc && sk) keys = { cc, sk };
+      }
+      if (!keys) { s.className = "status err"; s.textContent = "Do step 2 (generate keys & encrypt) first — your secret key has to exist on this device."; return; }
+      try {
+        s.textContent = "🔓 decrypting with your secret key…";
+        const out = await Furever.decrypt(keys.cc, keys.sk, res.scores, res.categories);
+        s.className = "status ok"; s.textContent = "decrypted on your device:";
+        Furever.renderScorecard($("scorecard"), out.overall, out.categories);
+      } catch (e) { s.className = "status err"; s.textContent = "error: " + (e.message || e); }
+    }
+    // An encrypted result arrived (from the relay poll or a file). Don't auto-
+    // decrypt — let the user click "reveal", so the encrypted->decrypted moment
+    // is visible.
+    function markResultReady(res, source) {
+      pendingResult = res;
+      const r = $("resultState"); r.className = "status ok";
+      r.textContent = `📥 Encrypted result received ${source} — still gibberish. Click “Decrypt & reveal” to open it with your key.`;
+      $("reveal").disabled = false;
+    }
+
+    // sample from the middle of the blob — the start is OpenFHE's (identical)
+    // serialization header; the ciphertext body lives deeper.
+    const midSlice = (s, n = 88) => s.slice(Math.floor(s.length / 2), Math.floor(s.length / 2) + n);
+    function proofHtml(bundle) {
+      return `<p><b>What actually leaves your device</b> — your encrypted answers ` +
+        `(${Furever.humanBytes(Furever.b64bytes(bundle.answers))} of ciphertext):</p>` +
+        `<div class="mono">…${Furever.esc(midSlice(bundle.answers))}…</div>` +
+        `<p>Your 12 answers aren’t in there in any readable form, and your ` +
+        `<b>secret key is not in the bundle</b> (only public/eval keys are). The ` +
+        `checker computes on this blind; the result only opens with your key, here.</p>` +
+        `<button id="reEnc" class="secondary" type="button">↻ Re-encrypt the same answers</button>` +
+        `<div id="reEncOut" class="note"></div>`;
+    }
+    async function proveRandomized() {
+      const out = $("reEncOut"); out.textContent = "encrypting again…";
+      const first = lastBundle.answers;
+      const second = await Furever.encrypt(keys.cc, keys.pk, readAnswers());
+      const diff = first !== second;                       // compare the FULL blobs
+      out.innerHTML = `<div class="mono">first:  …${Furever.esc(midSlice(first, 44))}…\nsecond: …${Furever.esc(midSlice(second, 44))}…</div>` +
+        `<p class="${diff ? "status ok" : "status err"}">${diff
+          ? "✅ Same answers → different ciphertext. FHE encryption is randomized, so the checker can’t even tell two identical submissions apart."
+          : "(unexpected) identical bytes"}</p>`;
+    }
+    function renderQR(url) {
+      try {
+        const qr = qrcode(0, "M"); qr.addData(url); qr.make();
+        $("qr").innerHTML = qr.createImgTag(5, 10) + `<p class="note">${url}</p>`;
+      } catch (_) { $("qr").innerHTML = `<p class="mono">${url}</p>`; }
+    }
+    async function sendToFriend() {
+      const s = $("relayStatus"); s.className = "status";
+      if (!lastBundle) { s.className = "status err"; s.textContent = "Do step 2 (encrypt) first."; return; }
+      try {
+        s.textContent = "📡 uploading the encrypted bundle to the relay…";
+        const r = await fetch("/relay/bundle", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(lastBundle) });
+        const { code } = await r.json();
+        const url = `${location.origin}/web/checker.html?code=${code}`;
+        renderQR(url);
+        s.className = "status ok"; s.textContent = `Scan on your friend’s device (code ${code}). Waiting for their encrypted result…`;
+        if (pollTimer) clearInterval(pollTimer);
+        pollTimer = setInterval(async () => {
+          const rr = await fetch(`/relay/result/${code}`);
+          if (rr.status === 200) {
+            clearInterval(pollTimer);
+            s.className = "status ok"; s.textContent = "📥 The checker computed this blind and returned an encrypted result (the relay only shuttled ciphertext).";
+            markResultReady(await rr.json(), "from your friend’s device");
+          }
+        }, 2000);
+      } catch (e) { s.className = "status err"; s.textContent = "error: " + (e.message || e); }
+    }
+
+    buildQuestions();
+    refreshKeyState();
+    $("go").addEventListener("click", go);
+    $("downloadBundle").addEventListener("click", () => lastBundle && Furever.downloadJson("applicant-bundle.json", lastBundle));
+    $("sendFriend").addEventListener("click", sendToFriend);
+    $("resultFile").addEventListener("change", async e => { if (e.target.files[0]) markResultReady(await Furever.readJsonFile(e.target.files[0]), "(from file)"); });
+    $("reveal").addEventListener("click", () => pendingResult && decryptObj(pendingResult));
+    $("forget").addEventListener("click", () => {
+      keys = null;
+      localStorage.removeItem("furever_cc"); localStorage.removeItem("furever_sk");
+      $("scorecard").innerHTML = ""; $("decStatus").textContent = ""; refreshKeyState();
+    });
+  </script>
+</body>
+</html>

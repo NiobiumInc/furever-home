@@ -1,0 +1,78 @@
+// server.niob — Server side: homomorphic scoring of all pets at once.
+//============================================================================
+// Runs on the SERVER ("checker") machine. NO access to the secret key.
+// Binary:
+//   score_pets <size>
+//
+// The server never sees the applicant's answers in plaintext. In ONE pass it
+// scores every (pet, category) pair against the plaintext rubric and returns
+// two ciphertexts: per-pet overall scores and the per-category breakdown.
+//
+// Circuit (total multiplicative depth: 1):
+//   1) weighted = answers (*) W            cipher x plaintext   [+1 level]
+//        W is the 256-slot plaintext weight+offset vector (rubric.dat), built
+//        by the apply_weights bridge. Element-wise, so each block holds that
+//        (pet,category)'s weighted answers plus its offset in the bias slot.
+//   2) block-sum: rotate-add by 1,2,4,8    [+0]
+//        After this, slot b*16 holds the category score for block b = the sum
+//        of that block's 16 slots (12 weighted answers + offset + padding).
+//   3) per-pet sum: rotate-add by 16,32    [+0]
+//        Offsets 16 and 32 land exactly on the four block-start slots of each
+//        pet, so slot pet*64 accumulates that pet's 4 category scores. No
+//        masking is needed — only clean block-start slots are ever summed.
+//============================================================================
+
+use shared::*
+
+// ============================================================================
+// The plaintext weight rubric multiply (cipher x plaintext-vector).
+//
+// The cipher x plaintext-vector multiply is delegated to a small C++ bridge
+// (`extern_call`) that does the plaintext encoding explicitly.
+// The bridge reads dsl/rubric.dat and builds
+// the 256-slot weight vector W where, for block b = pet*NUM_CATEGORIES + cat:
+//   W[b*16 + q]  = weight of question q for (pet, cat)   (q in 0..12)
+//   W[b*16 + 12] = offset for (pet, cat)                 (rides the bias slot)
+//   W[b*16 + 13..15] = 0
+// ============================================================================
+
+fn apply_weights(ct: enc<vec<f64>>) -> enc<vec<f64>> {
+    extern_call("apply_weights", ct)
+}
+
+// ============================================================================
+// Encrypted compute
+// ============================================================================
+
+@server @stage("score_pets")
+@hardware(cache_key: ["workload_size"])
+fn score_pets(inst: Instance)
+    -> reads(CryptoParams, EncryptedAnswers)
+{
+    let params  = load(CryptoParams, from: keydir(inst))
+    let answers = load(EncryptedAnswers, from: encdir(inst) / "answers.bin").ciphertext
+
+    // 1) cipher x plaintext rubric (weights + offsets), element-wise.
+    let weighted = apply_weights(answers)
+
+    // 2) Per-block sum via rotate-and-add by 1,2,4,8. Each 16-slot block
+    //    collapses so that slot b*16 holds that block's category score.
+    let cats = weighted
+    for i in 0..4 {
+        cats = cats + rotate(cats, 1 << i)
+    }
+
+    // 3) Per-pet sum via rotate-and-add by 16,32. For each pet, the four
+    //    category scores sit at block-start slots pet*64, +16, +32, +48; these
+    //    rotations sum them into slot pet*64. (Offsets 16,32 only ever touch
+    //    block-start slots, which are clean category scores — no mask needed.)
+    let scores = cats
+    for i in 4..6 {
+        scores = scores + rotate(scores, 1 << i)
+    }
+
+    save(EncryptedCategories { ciphertext: cats },
+         to: encdir(inst) / "categories.bin")
+    save(EncryptedScores { ciphertext: scores },
+         to: encdir(inst) / "scores.bin")
+}

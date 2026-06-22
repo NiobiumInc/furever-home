@@ -1,0 +1,13 @@
+# Keep the deployed image small: the relay only serves web/ + dsl/rubric.dat.
+# Exclude build outputs, deps, keys, and the demo video.
+.git
+**/node_modules
+io
+dsl/build-cpu
+dsl/nb_out
+web/wasm/openfhe-build
+web/wasm/openfhe-install
+web/wasm/selftest*
+demo.mp4
+**/*.bin
+**/.DS_Store

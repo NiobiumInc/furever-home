@@ -1,0 +1,138 @@
+// shared.niob — Furever Home: encrypted pet-adoption readiness check (FHE)
+//============================================================================
+// A self-screening "could I adopt this pet?" pre-check, scored homomorphically.
+//
+// The applicant answers 12 questions about their living situation (each on a
+// 0..4 "how much of this resource do you have" scale). The answers are
+// encrypted on the client. A checker service scores them — without ever
+// decrypting them — against several candidate pets' requirement rubrics, which
+// stay in PLAINTEXT on the server. The applicant decrypts and sees, per pet,
+// an overall readiness score plus a per-category breakdown.
+//
+// Categories (in fixed order): Housing, Time/Lifestyle, Finances, Experience.
+//
+// ---------------------------------------------------------------------------
+// SIMD packing
+// ---------------------------------------------------------------------------
+// We score every (pet, category) pair in ONE homomorphic pass. The ciphertext
+// is laid out as NUM_PETS*NUM_CATEGORIES = 16 contiguous BLOCKs of BLOCK=16
+// slots each (12 answers + 4 zero pad). Every block holds the SAME 12 answers
+// (replicated by the client at encrypt time):
+//
+//   block b = pet*NUM_CATEGORIES + cat   occupies slots [b*16 .. b*16+15]
+//   slot b*16 + q  =  answer q           (q in 0..12; q in 12..16 is zero)
+//
+// The server holds a matching 256-slot plaintext weight vector W where
+//   W[b*16 + q] = weight of question q for (pet, cat)
+// (0 for padding and for questions a category ignores).
+//
+// ---------------------------------------------------------------------------
+// Circuit (see server.niob) — total multiplicative depth: 1
+// ---------------------------------------------------------------------------
+//   1) weighted = answers (*) W            cipher x plaintext   [+1 level]
+//   2) block-sum: rotate-add by 1,2,4,8    [+0]  -> slot b*16 holds the
+//                                                category score for (pet,cat)
+//   3) per-pet sum: rotate-add by 16,32    [+0]  -> slot pet*64 holds the sum
+//                                                of that pet's 4 categories
+//
+// No masking is needed: the per-pet rotate-adds (offsets 16,32) only ever
+// touch block-start slots, which already hold clean category scores. The
+// client reads category scores at slots (pet*4+cat)*16 and overall scores at
+// slots pet*64.
+//============================================================================
+
+// ============================================================================
+// Instance sizes
+//
+// Toy (N=16384) is the default — keygen takes seconds, keys are a few MB, and
+// the circuit is identical to the hardware instance. (16384 is the smallest
+// ring dimension OpenFHE's 128-bit-security tables allow for our modulus chain;
+// 8192 is rejected.) Hardware (N=65536) is the target hardware ring dimension;
+// pass it when you want the real parameters. A smaller N is fine for CPU
+// iteration as long as the circuit is designed for N=65536 (it is).
+// ============================================================================
+
+enum InstanceSize { Toy, Hardware }
+
+struct Instance {
+    size: InstanceSize,
+    ring_dim: u32,
+}
+
+fn instance(size: InstanceSize) -> Instance {
+    match size {
+        Toy      => Instance { size, ring_dim: 16384 },
+        Hardware => Instance { size, ring_dim: 65536 },
+    }
+}
+
+fn instance_name(size: InstanceSize) -> string {
+    match size {
+        Toy      => "toy",
+        Hardware => "hw",
+    }
+}
+
+// ============================================================================
+// Questionnaire dimensions
+// ============================================================================
+
+const NUM_QUESTIONS:  u32 = 12
+const NUM_CATEGORIES: u32 = 4     // Housing, Time, Finances, Experience
+const NUM_PETS:       u32 = 4     // Rex, Mochi, Smaug, Kiwi (see rubric.dat)
+
+// Each (pet, category) gets a BLOCK of slots. BLOCK is NUM_QUESTIONS rounded
+// up to the next power of 2 so the per-block rotate-and-sum is exactly
+// log2(BLOCK) clean steps. 12 -> 16.
+const BLOCK:        u32 = 16
+const NUM_BLOCKS:   u32 = 16      // NUM_PETS * NUM_CATEGORIES
+const ACTIVE_SLOTS: u32 = 256     // NUM_BLOCKS * BLOCK
+
+// ============================================================================
+// Note: the cipher x plaintext-vector multiply that applies the weight rubric
+// is provided by an external C++ bridge (apply_weights_bridge.cpp), wired up
+// in server.niob via extern_call("apply_weights", ...), which does the plaintext
+// encoding the cipher x plaintext-vector multiply needs.
+//
+// The weight data itself lives in dsl/rubric.dat (a plaintext data file read
+// by both the bridge and the Python reference scorer), so swapping or adding
+// pets is a data edit — no circuit change, no recompile of the .niob logic.
+// ============================================================================
+
+// ============================================================================
+// Directory layout
+// ============================================================================
+
+fn iodir(inst: Instance) -> path  { root() / "io" / instance_name(inst.size) }
+fn keydir(inst: Instance) -> path { iodir(inst) / "keys" }
+fn encdir(inst: Instance) -> path { iodir(inst) / "encrypted" }
+
+// ============================================================================
+// Wire types
+//
+// All payload wires are single-field enc<vec<f64>> ciphertexts so the codegen's
+// optimized single-ciphertext serialization path kicks in. We use distinct
+// names for clarity though they all carry one ciphertext on disk.
+// ============================================================================
+
+wire CryptoParams {
+    context: CryptoContext,
+    public_key: PublicKey,
+    eval_mult_key: EvalMultKey,
+    eval_rot_keys: EvalAutomorphismKeys,
+}
+
+// The 256-slot packed, replicated answer vector (all 12 answers x 16 blocks).
+wire EncryptedAnswers {
+    ciphertext: enc<vec<f64>>,
+}
+
+// Per-pet overall readiness: slot pet*64 holds the sum of that pet's 4 categories.
+wire EncryptedScores {
+    ciphertext: enc<vec<f64>>,
+}
+
+// Per-pet-per-category breakdown: slot (pet*4+cat)*16 holds that category score.
+wire EncryptedCategories {
+    ciphertext: enc<vec<f64>>,
+}

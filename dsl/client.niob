@@ -1,0 +1,113 @@
+// client.niob — Client side: encrypt answers, decrypt & present the scorecard.
+//============================================================================
+// Runs on the CLIENT machine. Has access to the secret key.
+// Binaries:
+//   key_generation  <size>        (NOT generated here — see dsl/keygen.cpp)
+//   encrypt_answers <size> a0..a11 (each ai in 0..4 — see rubric.dat questions)
+//   decrypt_result  <size>
+//
+// <size> is 0 (Toy, N=8192, default) or 1 (Hardware, N=65536).
+//============================================================================
+
+use shared::*
+
+// The cipher x plaintext-vector scoring multiply (in server.niob) needs the
+// `mul` capability declared; `add` covers the rotate-and-sum. We omit `rotate`
+// on purpose — the exact rotation indices are hand-generated in dsl/keygen.cpp
+// (only the indices the circuit uses). The crypto context itself is built by
+// keygen.cpp, not by a DSL scheme block.
+requires { add, mul }
+
+// ============================================================================
+// Stage: encrypt the applicant's 12 answers into the packed, replicated
+// 256-slot ciphertext the server scores.
+//
+// Layout (NUM_BLOCKS = 16 blocks of BLOCK = 16 slots):
+//   for every block b:  slots [b*16 .. b*16+11] = the 12 answers (replicated)
+//                       slot   b*16+12          = 1.0  (constant bias term)
+//                       slots  b*16+13..15      = 0    (padding)
+// The bias slot lets the server fold a per-(pet,category) offset into the
+// score for free during the block-sum (its weight there is the offset).
+//
+// Defaults: a modest first-time owner in a small apartment — should come back
+// "you'd make a great cat owner" (Mochi). Matches the default in
+// reference/score_reference.py.
+// ============================================================================
+
+@client @stage("encrypt_answers")
+fn encrypt_answers(inst: Instance,
+                   a0: f64 = 3.0, a1: f64 = 1.0, a2: f64  = 0.0, a3: f64  = 1.0,
+                   a4: f64 = 1.0, a5: f64 = 2.0, a6: f64  = 2.0, a7: f64  = 1.0,
+                   a8: f64 = 1.0, a9: f64 = 0.0, a10: f64 = 0.0, a11: f64 = 3.0)
+    -> reads(CryptoParams), writes(EncryptedAnswers)
+{
+    let params = load(CryptoParams, from: keydir(inst))
+
+    let answers: vec<f64> = [a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11]
+
+    let packed: vec<f64> = vec_zeros<f64>(ACTIVE_SLOTS)
+    for b in 0..NUM_BLOCKS {
+        for q in 0..NUM_QUESTIONS {
+            packed[b * BLOCK + q] = answers[q]
+        }
+        packed[b * BLOCK + NUM_QUESTIONS] = 1.0   // bias slot
+    }
+
+    let ct = encrypt(params.public_key, packed)
+
+    save(EncryptedAnswers { ciphertext: ct },
+         to: encdir(inst) / "answers.bin")
+}
+
+// ============================================================================
+// Pet labels — plaintext display only, used after decryption. Keep in sync
+// with the pets (and their order) in rubric.dat.
+// ============================================================================
+
+fn pet_label(idx: u32) -> string {
+    match idx {
+        0 => "🐺 Rex   (high-energy husky)",
+        1 => "🐱 Mochi (aloof senior cat)",
+        2 => "🦎 Smaug (bearded dragon)",
+        3 => "🦜 Kiwi  (parrot)",
+        _ => "Unknown",
+    }
+}
+
+// ============================================================================
+// Stage: decrypt the two result ciphertexts and print the scorecard.
+//
+// The server packs results at strided slots:
+//   overall[pet]          at slot  pet * NUM_CATEGORIES * BLOCK
+//   category[pet][cat]     at slot (pet * NUM_CATEGORIES + cat) * BLOCK
+// ============================================================================
+
+@client @stage("decrypt_result")
+fn decrypt_result(inst: Instance)
+{
+    let sk = load_secret_key(keydir(inst) / "sk.bin")
+    let enc_scores = load(EncryptedScores,     from: encdir(inst) / "scores.bin").ciphertext
+    let enc_cats   = load(EncryptedCategories, from: encdir(inst) / "categories.bin").ciphertext
+
+    let score_slots = decrypt(sk, enc_scores)
+    let cat_slots   = decrypt(sk, enc_cats)
+
+    let overalls: vec<f64> = vec_zeros<f64>(NUM_PETS)
+    for p in 0..NUM_PETS {
+        overalls[p] = score_slots[p * NUM_CATEGORIES * BLOCK]
+    }
+    let (best, _) = argmax(overalls)
+
+    print("=== Furever Home — adoption readiness (decrypted) ===")
+    print("scores: Housing / Time / Finances / Experience  ->  overall")
+    print("(raw scores; a negative category means you fall short of that pet's needs)")
+    for p in 0..NUM_PETS {
+        let h = cat_slots[(p * NUM_CATEGORIES + 0) * BLOCK]
+        let t = cat_slots[(p * NUM_CATEGORIES + 1) * BLOCK]
+        let f = cat_slots[(p * NUM_CATEGORIES + 2) * BLOCK]
+        let e = cat_slots[(p * NUM_CATEGORIES + 3) * BLOCK]
+        print(pet_label(p) + "  " + str(h) + " / " + str(t) + " / " + str(f)
+              + " / " + str(e) + "  ->  " + str(overalls[p]))
+    }
+    print("Best match: " + pet_label(best))
+}

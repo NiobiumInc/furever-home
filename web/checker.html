@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Furever Home — Checker (no secret key)</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>🔒 Checker <span class="sub">— the “server” (no secret key)</span></h1>
+  <p class="sub"><a href="index.html">← back</a> · Scores an applicant on encrypted
+     answers. It never receives a secret key, and the scoring runs <b>right here in
+     this browser</b> — not on a server.</p>
+
+  <div class="card">
+    <h2>1. Receive the applicant’s bundle</h2>
+    <p id="recvState" class="status">⏳ Waiting for an applicant’s encrypted bundle… (it loads automatically when you open this from their QR code).</p>
+    <div id="bundleInfo"></div>
+    <div id="recvPeek"></div>
+    <details>
+      <summary class="note">🔒 Don’t want to use the relay? Use a file instead (nothing touches a server)</summary>
+      <p class="note">Ask the applicant for the bundle <i>file</i> and upload it here —
+         then no relay, and no server, is in the loop at all.</p>
+      <input type="file" id="bundleFile" accept="application/json,.json">
+    </details>
+  </div>
+
+  <div class="card">
+    <h2>2. Score it (blind)</h2>
+    <p class="note">Two separate steps, on purpose: first <b>compute</b> on the
+       ciphertext (here, in this browser), then <b>send</b> the encrypted result
+       back. The compute is local; only the send touches the network.</p>
+    <button id="score" disabled>🧮 Score on the encrypted answers</button>
+    <p id="status" class="status"></p>
+    <div id="resultInfo"></div>
+    <button id="send" disabled>📤 Send the encrypted result back</button>
+    <p id="deliver" class="status"></p>
+    <p class="note">🔌 Don’t believe the computing happens here, not on a server?
+       Once the bundle has loaded, turn off Wi-Fi and hit Score — it still
+       computes. Reconnect, then press Send (no need to re-score).</p>
+  </div>
+
+  <details class="proof" id="whatHappened">
+    <summary>What just happened here?</summary>
+    <div class="note">
+      <p>1. This page received an <b>encrypted</b> bundle — ciphertext + public/eval
+         keys, and <b>no secret key</b>. So it literally cannot read the answers.</p>
+      <p>2. The scoring ran <b>in this browser, on this device</b> (WebAssembly),
+         directly on the ciphertext. Nothing was sent anywhere to compute it.</p>
+      <p>3. The result is <b>also encrypted</b> — only the applicant’s secret key,
+         which never left their device, can open it.</p>
+      <p>4. The relay (if used) was only a <b>pipe</b> moving the encrypted bundle
+         and result between devices — it holds no key and ran no computation.</p>
+    </div>
+  </details>
+
+  <script src="wasm/fhe.js"></script>
+  <script src="app.js"></script>
+  <script>
+    const $ = id => document.getElementById(id);
+    let bundle = null, weights = null, lastResult = null;
+    const relayCode = new URLSearchParams(location.search).get("code");
+
+    function showBundle() {
+      const hasSk = "sk" in bundle;
+      $("bundleInfo").innerHTML =
+        `<div class="keylist mono">received:<br>` +
+        ["cc", "pk", "mk", "rk", "answers"].map(k =>
+          `&nbsp;${k} <span class="has">${k in bundle ? "✓" : "MISSING"}</span>`).join("<br>") +
+        `<br>&nbsp;<span class="${hasSk ? "has" : "no"}">sk (secret key): ` +
+        `${hasSk ? "PRESENT (!)" : "absent ✅ — the checker cannot decrypt"}</span></div>`;
+      // The bundle arrives from the relay (off-device, attacker-influencable), so
+      // the peek MUST be escaped before it touches innerHTML — never raw.
+      $("recvPeek").innerHTML = bundle.answers
+        ? `<p class="note">the encrypted answers we received (a peek — pure gibberish):</p>` +
+          `<div class="mono">…${Furever.esc(Furever.cipherPeek(bundle.answers))}…</div>`
+        : "";
+      $("score").disabled = !!hasSk || !(bundle.cc && bundle.mk && bundle.rk && bundle.answers);
+    }
+    async function loadBundle(file) {
+      const s = $("recvState"); s.className = "status";
+      try {
+        bundle = await Furever.readJsonFile(file);
+        s.className = "status ok"; s.textContent = "📥 Encrypted bundle loaded from file — the relay wasn’t used at all.";
+        showBundle();
+      } catch (e) { s.className = "status err"; s.textContent = "bad bundle: " + (e.message || e); }
+    }
+    async function fetchFromRelay(code) {
+      const s = $("recvState"); s.className = "status"; s.textContent = "📡 Receiving the applicant’s encrypted bundle…";
+      try {
+        const r = await fetch(`/relay/bundle/${code}`);
+        if (r.status !== 200) { s.className = "status err"; s.textContent = "Bundle not found (code expired or already used)."; return; }
+        bundle = await r.json();
+        s.className = "status ok"; s.textContent =
+          "📥 Encrypted bundle received — ciphertext + public keys only, no secret key. " +
+          "(The relay only passed it along; it can’t read it and ran no computation.)";
+        showBundle();
+      } catch (e) { s.className = "status err"; s.textContent = "error: " + (e.message || e); }
+    }
+
+    async function scoreIt() {
+      const s = $("status"); s.className = "status"; $("score").disabled = true;
+      try {
+        if (!weights) { s.textContent = "loading the shelter’s rubric (plaintext)…"; weights = await Furever.loadWeights(); }
+        s.textContent = "🧮 Computing on the ENCRYPTED answers — here, in your browser (nothing is sent to a server to do this)…";
+        // The computation is purely local (WASM) — it works even with no network.
+        const t0 = performance.now();
+        lastResult = await Furever.score(bundle.cc, bundle.mk, bundle.rk, bundle.answers, weights);
+        const ms = Math.round(performance.now() - t0);
+        const size = Furever.b64bytes(lastResult.scores) + Furever.b64bytes(lastResult.categories);
+        s.textContent = "";
+        $("resultInfo").innerHTML =
+          `<p class="status ok">✅ Scored blind in this browser in ${ms} ms — the math ran entirely on this device (${Furever.humanBytes(size)}).</p>` +
+          `<p class="note">the encrypted result (also gibberish — only the applicant’s key opens it):</p>` +
+          `<div class="mono">…${Furever.esc(Furever.cipherPeek(lastResult.scores))}…</div>`;
+        $("send").disabled = false;
+        $("deliver").className = "note";
+        $("deliver").textContent = relayCode
+          ? "↑ computed locally. Now press “Send” to return the encrypted result to the applicant."
+          : "↑ computed locally. Press “Download” to save the encrypted result and send it back.";
+      } catch (e) { s.className = "status err"; s.textContent = "error: " + (e.message || e); }
+      finally { $("score").disabled = false; }
+    }
+
+    // Delivery is a SEPARATE step from compute — the only part that needs the
+    // network. After the offline challenge, reconnect and press this (no re-score).
+    async function sendResult() {
+      if (!lastResult) return;
+      const d = $("deliver"); d.className = "status";
+      if (relayCode) {
+        d.textContent = "📤 sending the encrypted result back to the applicant…";
+        try {
+          await fetch(`/relay/result/${relayCode}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(lastResult) });
+          d.className = "status ok"; d.textContent = "📤 Encrypted result sent back to the applicant’s device.";
+          $("send").disabled = true;
+        } catch (_) {
+          d.className = "status err"; d.textContent = "📤 Couldn’t reach the relay (offline?). Reconnect and press Send again — no need to re-score.";
+        }
+      } else {
+        Furever.downloadJson("result-for-applicant.json", lastResult);
+        d.className = "status ok"; d.textContent = "⬇️ Result file downloaded — send it back to the applicant, who decrypts it on their device.";
+      }
+    }
+
+    $("bundleFile").addEventListener("change", e => e.target.files[0] && loadBundle(e.target.files[0]));
+    $("score").addEventListener("click", scoreIt);
+    $("send").addEventListener("click", sendResult);
+    $("send").textContent = relayCode ? "📤 Send the encrypted result back" : "⬇️ Download the encrypted result";
+    // Prefetch the WASM engine AND the shelter's rubric now, so Score is fully
+    // local later (and the "turn off Wi-Fi, then Score" challenge genuinely
+    // works — otherwise fhe.wasm would only be fetched at Score time).
+    Furever.fhe().catch(() => {});
+    Furever.loadWeights().then(w => { weights = w; }).catch(() => {});
+    if (relayCode) fetchFromRelay(relayCode);   // opened from a QR / link
+  </script>
+</body>
+</html>

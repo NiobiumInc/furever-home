@@ -1,0 +1,114 @@
+# Furever Home — pet adoption rubric (PLAINTEXT, server-side).
+#
+# This is the single source of truth for the scoring weights. Both the C++
+# scoring bridge (apply_weights_bridge.cpp) and the Python reference scorer
+# (reference/score_reference.py) read this file, so they can never drift apart.
+#
+# Swapping or retuning a pet is a pure data edit here — no recompile of the
+# circuit, no new keys. Adding/removing a pet additionally requires bumping
+# NUM_PETS in shared.niob and the pet_label() list in client.niob.
+#
+# ---------------------------------------------------------------------------
+# Format
+# ---------------------------------------------------------------------------
+#   Lines starting with '#' and blank lines are ignored.
+#   Each pet is one "PET <emoji> <name>" line followed by 4 weight lines,
+#   one per category, in the fixed order: Housing, Time, Finances, Experience.
+#   Each category line has exactly 13 numbers:
+#       w0 w1 ... w11   offset
+#   The first 12 are the weight of question q (0..11) for that (pet, category);
+#   the 13th is a bias/offset added to the category score.
+#
+# ---------------------------------------------------------------------------
+# The model (linear, multiplicative depth 1)
+# ---------------------------------------------------------------------------
+#   category = sum_q answers[q]*weight[q] + offset
+#   overall  = sum_cat category
+#
+#   answers[q] is on a 0..4 "how much of this resource do you have" scale where
+#   higher ALWAYS means more of a desirable resource. Weights (>=0) say how much
+#   a pet cares about a resource; the offset encodes how DEMANDING the pet is:
+#   a forgiving pet (low requirements) gets a positive offset so modest owners
+#   still score well, while a demanding pet gets a negative offset so only a
+#   well-resourced owner clears the bar. Raw category scores can go negative;
+#   the client clamps to 0 for display. Scores land roughly on a 0..10 scale.
+#
+#   (The offset rides "for free" in a padding slot of each SIMD block — the
+#   client packs a constant 1.0 there and the weight vector holds the offset,
+#   so block-sum adds it with no extra circuit depth. See server.niob.)
+#
+# ---------------------------------------------------------------------------
+# The 12 questions (q0..q11), all on a 0..4 "how much do you have" scale
+# ---------------------------------------------------------------------------
+#   Housing
+#     q0  Housing stability / pets allowed   (0 rent, not allowed .. 4 own, allowed)
+#     q1  Indoor space                       (0 tiny studio .. 4 large house)
+#     q2  Outdoor / yard access              (0 none .. 4 large fenced yard)
+#   Time / Lifestyle
+#     q3  Hours/day at home with the pet      (0 barely there .. 4 home most of day)
+#     q4  Daily active time you can give      (0 none .. 4 lots of exercise)
+#     q5  Schedule stability / rarely travel  (0 travel constantly .. 4 very stable)
+#   Finances
+#     q6  Monthly care budget                 (0 minimal .. 4 generous)
+#     q7  Emergency vet fund readiness        (0 none .. 4 well prepared)
+#     q8  Willing to buy setup/equipment      (0 no .. 4 whatever it takes)
+#   Experience
+#     q9  Prior pet ownership                 (0 never .. 4 lifelong)
+#     q10 Experience with THIS species        (0 none .. 4 expert)
+#     q11 Calm, compatible household          (0 chaotic/conflicts .. 4 calm & ready)
+#
+# Columns:        q0    q1    q2    q3    q4    q5    q6    q7    q8    q9   q10   q11   offset
+
+# Tuning principle: a DEMANDING pet has a low floor (offset ~0) but a high
+# ceiling (large weights) — it rewards a well-resourced owner and punishes a
+# poorly-resourced one. A FORGIVING pet has a high floor (large offset) but a
+# gentle slope (small weights) — modest owners already clear the bar, and being
+# extra-resourced doesn't help it much. Where a pet is demanding vs forgiving
+# varies BY category (e.g. Smaug is forgiving on Time but demanding on Finances).
+
+PET 🐺 Rex
+# Rex — high-energy husky. Demanding in every category: floors ~0, big weights.
+# Housing:    big space + a yard
+  0.60  0.95  0.95  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00    0.0
+# Time:       activity above all, plus being around
+  0.00  0.00  0.00  0.70  1.40  0.50  0.00  0.00  0.00  0.00  0.00  0.00    0.0
+# Finances:   huskies are not cheap
+  0.00  0.00  0.00  0.00  0.00  0.00  1.00  1.00  0.50  0.00  0.00  0.00    0.0
+# Experience: handling a strong working breed
+  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.80  1.00  0.50    0.0
+
+PET 🐱 Mochi
+# Mochi — aloof senior cat. Forgiving everywhere: high floors, gentle slopes.
+# A great first pet — almost anyone clears the bar.
+# Housing:    just needs to be allowed; space barely matters
+  0.70  0.25  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00    3.5
+# Time:       happy alone; a little attention is plenty
+  0.00  0.00  0.00  0.30  0.20  0.15  0.00  0.00  0.00  0.00  0.00  0.00    4.0
+# Finances:   cheap to keep
+  0.00  0.00  0.00  0.00  0.00  0.00  0.50  0.40  0.10  0.00  0.00  0.00    3.5
+# Experience: very beginner-friendly
+  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.35  0.25  0.40    2.5
+
+PET 🦎 Smaug
+# Smaug — bearded dragon. Forgiving on Time (low-attention), but demanding on
+# Housing (needs a big enclosure), Finances (the heat/UVB rig), and Experience.
+# Housing:    space for a big enclosure (moderately demanding)
+  0.40  0.90  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00    1.0
+# Time:       minimal — reptiles are low-attention (forgiving, high floor)
+  0.00  0.00  0.00  0.35  0.20  0.25  0.00  0.00  0.00  0.00  0.00  0.00    4.5
+# Finances:   the rig is the cost; equipment weighted hard (demanding)
+  0.00  0.00  0.00  0.00  0.00  0.00  0.40  0.30  1.70  0.00  0.00  0.00    0.0
+# Experience: exotic husbandry really matters (demanding)
+  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.30  1.70  0.40    0.0
+
+PET 🦜 Kiwi
+# Kiwi — parrot. The opposite of Smaug: enormous Time demand (the steepest of
+# all), long-lived commitment, needs a stable compatible home and experience.
+# Housing:    a settled, pet-friendly home (slightly demanding)
+  0.80  0.50  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00    0.5
+# Time:       wants you THERE and engaged — keys on home-time, not athletics
+  0.00  0.00  0.00  1.30  0.40  0.50  0.00  0.00  0.00  0.00  0.00  0.00    0.0
+# Finances:   moderate ongoing cost
+  0.00  0.00  0.00  0.00  0.00  0.00  0.80  0.70  0.40  0.00  0.00  0.00    0.5
+# Experience: parrots are not for first-timers; calm home crucial
+  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.70  0.90  0.70    0.0

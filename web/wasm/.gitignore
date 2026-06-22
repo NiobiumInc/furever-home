@@ -1,0 +1,14 @@
+openfhe-build/
+openfhe-install/
+*.o
+*.a
+
+# selftest scratch — not shipped
+selftest.js
+selftest.wasm
+selftest_web.js
+selftest_web.wasm
+
+# NOTE: fhe.js + fhe.wasm ARE committed on purpose — they're the runtime FHE
+# engine the deployed site loads in the browser, so the repo is runnable as
+# cloned / deployable without an Emscripten build. Rebuild with build_module.sh.
