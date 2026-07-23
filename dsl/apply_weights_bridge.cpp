@@ -11,6 +11,7 @@
 //   remaining padding slots stay 0.
 #include "apply_weights_openfhe.h"
 #include "nb_shared.h"   // NUM_QUESTIONS, NUM_CATEGORIES, NUM_PETS, BLOCK, ACTIVE_SLOTS
+#include "niobium/compiler.h"  // tag the host-built rubric plaintext for @hardware replay
 
 #include <cstdlib>
 #include <fstream>
@@ -79,10 +80,17 @@ static std::vector<double> build_weight_vector() {
     return W;
 }
 
-ConstCiphertext<DCRTPoly> apply_weights(CryptoContext<DCRTPoly> cc,
-                                        ConstCiphertext<DCRTPoly> ct) {
+Ciphertext<DCRTPoly> apply_weights(CryptoContext<DCRTPoly> cc,
+                                   ConstCiphertext<DCRTPoly> ct) {
     static const std::vector<double> W = build_weight_vector();
+    // Register the host-built rubric plaintext so its data lands in the FHETCH
+    // trace. Without this, an @hardware replay reads it as uninitialized and the
+    // whole cipher×plaintext multiply comes back zero. pause()/resume() keeps the
+    // host-side encode out of the recorded op stream.
+    niobium::compiler().pause();
     auto pt = cc->MakeCKKSPackedPlaintext(W);
+    niobium::compiler().tag_input("rubric_weights", pt);
+    niobium::compiler().resume();
     auto mct = std::const_pointer_cast<CiphertextImpl<DCRTPoly>>(ct);
     return cc->EvalMult(mct, pt);
 }

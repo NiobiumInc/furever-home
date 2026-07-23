@@ -73,7 +73,7 @@ container (a generic `Dockerfile` is included), so you can host it on anything
 that runs containers. Prefer to just watch? Here's a ~80-second narrated
 walkthrough: [`demo.mp4`](demo.mp4).
 
-## The FHE circuit — read the code (and run the plaintext version)
+## The FHE circuit
 
 The encrypted scoring is about **ten lines** of the Niobium FHE DSL in
 [`dsl/server.niob`](dsl/server.niob): multiply the encrypted answers by each pet's
@@ -82,6 +82,8 @@ plaintext weight vector and sum — `category = Σ answersᵢ·weightᵢ + offse
 answers and decrypts the returned scores; [`dsl/shared.niob`](dsl/shared.niob) holds
 the constants and wire types; [`dsl/rubric.dat`](dsl/rubric.dat) is the pets as
 plaintext weights.
+
+### Read the code (and run the plaintext version)
 
 **Runnable with no build** — the same scoring in the clear:
 ```bash
@@ -97,16 +99,21 @@ node web/wasm/test_module.js
 runs keygen → encrypt → score → decrypt in WebAssembly and confirms the decrypted
 scores match the plaintext reference (max error 0.0).
 
-**Source to read, not a turnkey build** — the encrypted CLI pipeline
-(`key_generation → encrypt_answers → score_pets → decrypt_result`, plus
-`keygen.cpp` and the `apply_weights` bridge) is here to *read*. Compiling the
-`.niob` to OpenFHE C++ and building those binaries goes through the Niobium DSL
-toolchain in
-[**niobium-client**](https://github.com/NiobiumInc/niobium-client) — it isn't a
-plain `cmake && make`. For the *runnable* encrypted experience, use the web app
-above; it does the real FHE in your browser with no build.
+### Build and run it natively (CPU or Niobium FPGA)
 
-**Why it's real encryption** (not a lock icon over plaintext):
+The encrypted CLI pipeline
+(`key_generation → encrypt_answers → score_pets → decrypt_result`, plus
+`keygen.cpp` and the `apply_weights` bridge) compiles from the `.niob` source
+through the Niobium DSL toolchain in
+[**niobium-client**](https://github.com/NiobiumInc/niobium-client). Once you've
+built that once, a single script builds the binaries, and they run the same on a
+normal CPU or on Niobium FPGA hardware via the Fog job service. Step-by-step:
+[`dsl/README.md`](dsl/README.md). (No SDK to install? The web app above gives you
+the full encrypted experience in your browser with nothing to build.)
+
+### Why it's real encryption
+
+Not a lock icon over plaintext:
 - What leaves your device is high-entropy ciphertext; the same answers encrypt to
   *different* bytes each time (CKKS is randomized).
 - The checker is handed only public/eval keys — **no secret key** — so it

@@ -1,8 +1,9 @@
 # build artifacts (the DSL-generated C++ + compiled binaries + keys)
 dsl/nb_out/
-dsl/build-cpu/
 io/
 *.bin
 __pycache__/
 .DS_Store
 **/.DS_Store
+
+video/

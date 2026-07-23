@@ -98,8 +98,8 @@ simplification vs. the original plan, which budgeted depth 3 + two mask bridges.
 N=8192 is rejected by OpenFHE's 128-bit security tables for this modulus chain,
 so Toy is 16384. Measured sizes: Toy keys ≈ 18 MB (rk 15 MB), each ciphertext
 ≈ 0.75 MB; Hardware keys ≈ 75 MB (rk 60 MB), each ciphertext ≈ 3 MB. Far lighter
-than zombie-apocalypse (depth 12, ~540 MB rotation keys) because depth is 1 and
-only 6 rotation indices are generated.
+than a deep circuit (e.g. depth 12, which would need ~540 MB of rotation keys)
+because depth here is 1 and only 6 rotation indices are generated.
 
 ## Stage 7 — Implementation & test
 

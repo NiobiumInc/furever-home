@@ -3,11 +3,11 @@
 .git
 **/node_modules
 io
-dsl/build-cpu
 dsl/nb_out
 web/wasm/openfhe-build
 web/wasm/openfhe-install
 web/wasm/selftest*
 demo.mp4
+video
 **/*.bin
 **/.DS_Store
