@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Furever Home — Survey (your device)</title>
+  <title>Furever Home: Survey (your device)</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -19,26 +19,30 @@
   <div class="card">
     <h2>2. Encrypt &amp; make the bundle for the checker</h2>
     <button id="go">🔑 Generate keys &amp; encrypt my answers</button>
+    <p class="note">This runs real FHE in your browser, so give it a moment
+       (a few seconds on a computer, longer on a phone or slow connection).</p>
     <p id="encStatus" class="status"></p>
     <div id="bundleInfo"></div>
     <p><button id="downloadBundle" class="secondary" type="button" disabled>⬇️ Download bundle file</button>
-       <span class="note">— only for the offline hand-off (AirDrop / upload). Skip it if you’re using the QR below.</span></p>
+       <span class="note">for the offline hand-off (AirDrop / upload); skip it if you’re using the QR below.</span></p>
   </div>
 
   <div class="card">
-    <h2>2b. …or send it to a friend’s device (QR)</h2>
+    <h2>2b. …or send it to a checker (QR)</h2>
     <p class="note">Uploads the bundle (no secret key) to a local relay and shows
-       a QR. Your friend scans it, the checker runs in <i>their</i> browser, and
-       the encrypted result comes back here automatically. (Open this page via
-       your machine’s network address, not localhost, so the QR is scannable.)</p>
-    <button id="sendFriend" type="button">📡 Send to a friend’s device</button>
+       a QR. Scan it with a checker (your own phone, or someone else’s); the checker
+       runs in <i>that</i> browser, and the encrypted result comes back here
+       automatically.</p>
+    <button id="sendFriend" type="button">📡 Send to a checker</button>
+    <p class="note">Uploading your encrypted bundle (around 20 MB) takes a moment
+       before the QR appears, and longer on a phone or slow connection.</p>
     <p id="relayStatus" class="status"></p>
     <div id="qr"></div>
     <p class="note">🔒 Don’t want to route anything through the relay? Use the
-       <b>Download bundle file</b> button above and hand it to your friend yourself
-       — then nothing touches a server. (Either way the relay only ever holds
-       ciphertext + public keys, never your secret key, and your friend’s device
-       does the computing.)</p>
+       <b>Download bundle file</b> button above and pass it to the checker
+       yourself; then nothing touches a server. (Either way the relay only ever
+       holds ciphertext + public keys, never your secret key, and the checker does
+       the computing.)</p>
   </div>
 
   <details class="proof" id="proofPanel">
@@ -48,15 +52,15 @@
 
   <div class="card">
     <h2>3. Get your result</h2>
-    <p class="note">The checker returns an <b>encrypted</b> result — gibberish
+    <p class="note">The checker returns an <b>encrypted</b> result, gibberish
        until you open it with your secret key, which lives only on this device
        (and is remembered in your browser, so you can leave and come back).</p>
     <p id="keyState" class="note"></p>
-    <p id="resultState" class="status">No result yet — send your bundle to the
+    <p id="resultState" class="status">No result yet. Send your bundle to the
        checker (QR or file); its encrypted result will arrive here.</p>
     <button id="reveal" type="button" disabled>🔓 Decrypt &amp; reveal my result</button>
     <details>
-      <summary class="note">Got a result <i>file</i> from your friend? (offline hand-off)</summary>
+      <summary class="note">Got a result <i>file</i> back from the checker? (offline hand-off)</summary>
       <input type="file" id="resultFile" accept="application/json,.json">
     </details>
     <p id="decStatus" class="status"></p>
@@ -113,10 +117,10 @@
         $("bundleInfo").innerHTML =
           `<p class="status ok">✅ encrypted. Bundle ready (${Furever.humanBytes(total)}).</p>` +
           `<div class="keylist mono">bundle contents:<br>` +
-          `&nbsp;cc, pk, mk, rk &nbsp;<span class="has">(public / evaluation keys — safe to share)</span><br>` +
-          `&nbsp;answers &nbsp;<span class="has">(your encrypted answers — gibberish)</span><br>` +
-          `&nbsp;<span class="no">sk (secret key): NOT included — it never leaves this page</span></div>` +
-          `<p class="note">Now hand it to the checker — use “Send to a friend’s device” (QR) below, or download the file for an offline hand-off.</p>`;
+          `&nbsp;cc, pk, mk, rk &nbsp;<span class="has">(public / evaluation keys, safe to share)</span><br>` +
+          `&nbsp;answers &nbsp;<span class="has">(your encrypted answers, gibberish)</span><br>` +
+          `&nbsp;<span class="no">sk (secret key): NOT included, it never leaves this page</span></div>` +
+          `<p class="note">Now hand it to the checker: use “Send to a checker” (QR) below, or download the file for an offline hand-off.</p>`;
         $("downloadBundle").disabled = false;
         $("proofBody").innerHTML = proofHtml(bundle);
         $("reEnc").addEventListener("click", proveRandomized);
@@ -128,7 +132,7 @@
 
     function refreshKeyState() {
       const have = keys || localStorage.getItem("furever_sk");
-      $("keyState").textContent = have ? "🔑 your key is remembered on this device." : "🔑 no key yet — do step 2 first.";
+      $("keyState").textContent = have ? "🔑 your key is remembered on this device." : "🔑 no key yet. Do step 2 first.";
     }
 
     async function decryptObj(res) {
@@ -137,7 +141,7 @@
         const cc = localStorage.getItem("furever_cc"), sk = localStorage.getItem("furever_sk");
         if (cc && sk) keys = { cc, sk };
       }
-      if (!keys) { s.className = "status err"; s.textContent = "Do step 2 (generate keys & encrypt) first — your secret key has to exist on this device."; return; }
+      if (!keys) { s.className = "status err"; s.textContent = "Do step 2 (generate keys & encrypt) first. Your secret key has to exist on this device."; return; }
       try {
         s.textContent = "🔓 decrypting with your secret key…";
         const out = await Furever.decrypt(keys.cc, keys.sk, res.scores, res.categories);
@@ -151,7 +155,7 @@
     function markResultReady(res, source) {
       pendingResult = res;
       const r = $("resultState"); r.className = "status ok";
-      r.textContent = `📥 Encrypted result received ${source} — still gibberish. Click “Decrypt & reveal” to open it with your key.`;
+      r.textContent = `📥 Encrypted result received ${source}, still gibberish. Click “Decrypt & reveal” to open it with your key.`;
       $("reveal").disabled = false;
     }
 
@@ -159,7 +163,7 @@
     // serialization header; the ciphertext body lives deeper.
     const midSlice = (s, n = 88) => s.slice(Math.floor(s.length / 2), Math.floor(s.length / 2) + n);
     function proofHtml(bundle) {
-      return `<p><b>What actually leaves your device</b> — your encrypted answers ` +
+      return `<p><b>What actually leaves your device</b>: your encrypted answers ` +
         `(${Furever.humanBytes(Furever.b64bytes(bundle.answers))} of ciphertext):</p>` +
         `<div class="mono">…${Furever.esc(midSlice(bundle.answers))}…</div>` +
         `<p>Your 12 answers aren’t in there in any readable form, and your ` +
@@ -193,14 +197,14 @@
         const { code } = await r.json();
         const url = `${location.origin}/web/checker.html?code=${code}`;
         renderQR(url);
-        s.className = "status ok"; s.textContent = `Scan on your friend’s device (code ${code}). Waiting for their encrypted result…`;
+        s.className = "status ok"; s.textContent = `Scan on the checker (code ${code}). Waiting for its encrypted result…`;
         if (pollTimer) clearInterval(pollTimer);
         pollTimer = setInterval(async () => {
           const rr = await fetch(`/relay/result/${code}`);
           if (rr.status === 200) {
             clearInterval(pollTimer);
             s.className = "status ok"; s.textContent = "📥 The checker computed this blind and returned an encrypted result (the relay only shuttled ciphertext).";
-            markResultReady(await rr.json(), "from your friend’s device");
+            markResultReady(await rr.json(), "from the checker");
           }
         }, 2000);
       } catch (e) { s.className = "status err"; s.textContent = "error: " + (e.message || e); }

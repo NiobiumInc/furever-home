@@ -1,31 +1,35 @@
-# Furever Home — the DSL pipeline (run on CPU or the Niobium FPGA)
+# Furever Home: the DSL pipeline (run on CPU or the Niobium FPGA)
 
 This folder holds the **encrypted scoring written in the Niobium FHE DSL** and a
 one-command build that produces a working CLI pipeline you can run **on a normal
 CPU** or **on Niobium FPGA hardware** (via the Fog job service).
 
 > **Just want to try the app?** You don't need any of this. The whole thing runs
-> in your browser with nothing to build — see the top-level
-> [`README.md`](../README.md) ("Run it in your browser"). This folder is the
-> "graduate to the SDK" path: real OpenFHE C++ compiled from the `.niob` source,
-> the same circuit, run natively.
+> in your browser with nothing to build; see the top-level
+> [`README.md`](../README.md) ("Run it yourself"). This folder is the "graduate to
+> the SDK" path: real OpenFHE C++ compiled from the `.niob` source, the same
+> circuit, run natively.
+
+> **Optional:** you're welcome to enlist an AI coding agent (for example Claude
+> Code) to help you work through the build and the runs below. It's a normal
+> from-source build either way.
 
 ## What's here
 
 | File | What it is |
 |---|---|
 | `shared.niob`, `client.niob`, `server.niob` | the FHE program (constants/wire types, client encrypt+decrypt, server blind scoring) |
-| `rubric.dat` | the pets, as plaintext weight vectors (data, not code — retune without recompiling) |
+| `rubric.dat` | the pets, as plaintext weight vectors (data, not code, so you can retune without recompiling) |
 | `apply_weights_bridge.cpp` / `.h`, `apply_weights_openfhe.h` | C++ bridge for the cipher×plaintext rubric multiply |
 | `keygen.cpp` | hand-rolled key generation (only the rotation keys the circuit uses) |
-| `reference/score_reference.py` | the plaintext scorer — the ground truth the encrypted result is checked against |
+| `reference/score_reference.py` | the plaintext scorer, the ground truth the encrypted result is checked against |
 | `build_dsl.sh` | compiles the `.niob` and builds the four CLI binaries |
 | `nb_out/` | generated C++ + build output (git-ignored; recreated by `build_dsl.sh`) |
 
 ## Prerequisites
 
-A built **[niobium-client](https://github.com/NiobiumInc/niobium-client)** checkout
-— it carries the DSL compiler (`nbc`), the FHETCH client runtime, and its own
+A built **[niobium-client](https://github.com/NiobiumInc/niobium-client)** checkout.
+It carries the DSL compiler (`nbc`), the FHETCH client runtime, and its own
 vendored OpenFHE, so you do **not** need a separate OpenFHE install for this path.
 Build it once:
 
@@ -36,13 +40,16 @@ make sync && make release      # builds OpenFHE + libnbfhetch + the runtime libs
 ```
 
 If the build complains about missing system prerequisites (a C++17 toolchain,
-CMake, OpenSSL, Python 3 — and on macOS an `OPENSSL_ROOT_DIR` export),
+CMake, OpenSSL, Python 3, and on macOS an `OPENSSL_ROOT_DIR` export),
 niobium-client's **Fog quickstart → "Install build prerequisites"** walks through
 them per platform; refer back there if `make release` fails.
 
 Point `NIOBIUM_CLIENT_ROOT` at that checkout when you build furever below.
 
-> **macOS note:** use Homebrew's toolchain — the system `cmake`/`python3` may be
+> **Version note.** Needs a niobium-client that includes the native `@hardware`
+> `save()` instrumentation (NiobiumInc/niobium-client#244 or later).
+
+> **macOS note:** use Homebrew's toolchain; the system `cmake`/`python3` may be
 > x86_64 and will fail on Apple Silicon. Pass `CMAKE=/opt/homebrew/bin/cmake` and
 > `PY=/opt/homebrew/bin/python3` (see the build command).
 
@@ -63,13 +70,13 @@ keygen target, and builds four binaries into **`nb_out/build/`**:
 key_generation   encrypt_answers   score_pets   decrypt_result
 ```
 
-The **same binaries** run on CPU as-is, or on the FPGA via `fog submit` — there is
+The **same binaries** run on CPU as-is, or on the FPGA via `fog submit`; there is
 no separate "CPU build" vs "hardware build."
 
 ## Run on CPU
 
 From the build dir, tell the scorer where the rubric lives, then run the four
-stages. Answers are the 12 questionnaire values (each `0–4`); use **size `1`**
+stages. Answers are the 12 questionnaire values (each `0-4`); use **size `1`**
 (the Niobium ring dimension, N=65536):
 
 ```bash
@@ -83,20 +90,20 @@ export FUREVER_RUBRIC="$PWD/../../rubric.dat"
 ```
 
 **Check it:** the decrypted scores must match the plaintext reference for the same
-answers —
+answers:
 
 ```bash
 python3 ../../reference/score_reference.py 3 4 1 1 0 3 3 2 4 2 4 3
 ```
 
-For this profile that's **Rex 22.85, Mochi 22.95, Smaug 28.60, Kiwi 20.70 → best
-match 🦎 Smaug**. The decrypted FHE result should agree to within CKKS
-approximation error.
+For this profile that's **Rex 22.85, Mochi 22.95, Smaug 28.60, Kiwi 20.70**, best
+match 🦎 Smaug. The decrypted FHE result should agree to within CKKS approximation
+error.
 
 ## Run on the Niobium FPGA (Fog)
 
 Fog runs the encrypted `score_pets` stage on real Niobium hardware as a job. Two
-one-time setup steps are required — see
+one-time setup steps are required. See
 [niobium-client](https://github.com/NiobiumInc/niobium-client#fog-quickstart)'s
 Fog quickstart for detailed instructions:
 
@@ -124,15 +131,4 @@ fog submit ./score_pets 1 --target=FOG            # blind scoring on the FPGA
 The first local run of `score_pets` records a hardware trace; `fog submit` replays
 that trace on the device and returns the encrypted result, which `decrypt_result`
 reads directly. The result decrypts to the **same** scorecard as CPU and the
-plaintext reference — the FPGA computed on ciphertext it could never read.
-
-## Note on the hardware instrumentation
-
-`build_dsl.sh` rewrites the generated `score_pets.cpp` into the **manual FHETCH
-instrumentation pattern** from niobium-client's README (*Entry Point 2 — OpenFHE
-for application developers*): `capture_crypto_context` → `tag_input` → `tag_keys`,
-`probe()` each saved output while recording, and `result()` to rehydrate each
-device output on replay. This is needed because furever's scoring stage both
-`save()`s its outputs and multiplies by a host-built plaintext rubric — two things
-the DSL's default `@hardware` codegen doesn't yet handle. See the header of
-`build_dsl.sh` for the details.
+plaintext reference; the FPGA computed on ciphertext it could never read.

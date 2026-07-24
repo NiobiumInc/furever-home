@@ -38,10 +38,10 @@ const PETS = [
 ];
 const CATS = ["Housing", "Time", "Finances", "Experience"];
 const VERDICT = {
-  Rex: "you've got the space and energy — go meet that husky!",
-  Mochi: "low-key and easygoing — you'd make a wonderful cat person.",
-  Smaug: "proper setup and know-how — the bearded dragon suits you.",
-  Kiwi: "home, engaged, experienced — a parrot would adore you.",
+  Rex: "you've got the space and energy, go meet that husky!",
+  Mochi: "low-key and easygoing, you'd make a wonderful cat person.",
+  Smaug: "proper setup and know-how, the bearded dragon suits you.",
+  Kiwi: "home, engaged, experienced: a parrot would adore you.",
 };
 
 let _modPromise = null;

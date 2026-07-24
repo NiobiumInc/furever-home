@@ -38,8 +38,9 @@ function loadWeights() {
   const dt = Date.now() - t0;
 
   // Python reference (ground truth)
+  const py = process.env.PYTHON || 'python3';
   const ref = JSON.parse(cp.execSync(
-    `/opt/homebrew/bin/python3 ${path.join(DSL, 'reference', 'score_reference.py')} --json ${ans.join(' ')}`
+    `${py} ${path.join(DSL, 'reference', 'score_reference.py')} --json ${ans.join(' ')}`
   ).toString());
 
   let maxErr = 0;
