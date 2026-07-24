@@ -128,11 +128,13 @@ plaintext reference — the FPGA computed on ciphertext it could never read.
 
 ## Note on the hardware instrumentation
 
-`build_dsl.sh` rewrites the generated `score_pets.cpp` into the **manual FHETCH
-instrumentation pattern** from niobium-client's README (*Entry Point 2 — OpenFHE
-for application developers*): `capture_crypto_context` → `tag_input` → `tag_keys`,
-`probe()` each saved output while recording, and `result()` to rehydrate each
-device output on replay. This is needed because furever's scoring stage both
-`save()`s its outputs and multiplies by a host-built plaintext rubric — two things
-the DSL's default `@hardware` codegen doesn't yet handle. See the header of
-`build_dsl.sh` for the details.
+The DSL's `@hardware` codegen instruments `save()`d outputs natively: each
+`save()` in the scoring stage is `probe()`d during the record pass (probe name =
+the `.bin` filename's stem) and reconstructed via `result()` on a replay run, so
+the generated `score_pets.cpp` is correct as emitted — `build_dsl.sh` no longer
+rewrites it. (Earlier niobium-client versions only probed a returned
+wire-result; with those, the FPGA replay of furever's saved outputs came back
+empty/zero and the script post-patched the file into the manual pattern from
+niobium-client's README, *Entry Point 2*.) The host-built plaintext rubric needs
+no manual handling either: the cooperative auto-tagging hook captures every
+`MakeCKKSPackedPlaintext` as a trace input automatically.
