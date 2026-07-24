@@ -8,10 +8,6 @@ scores you against several pets' needs **on encrypted answers**. The checker
 service computes your readiness without ever seeing what you typed, and only you
 can decrypt the result.
 
-The same app could run a shelter's real roster (photos, needs, quirks) in place of
-these four demo pets, letting would-be adopters privately find the pet they're most
-likely to be approved for before filling out a single form.
-
 It's a small, concrete demo of **Fully Homomorphic Encryption (FHE)**: compute on
 data you can't see. Built with the [Niobium FHE DSL](https://github.com/NiobiumInc/niobium-client)
 on top of OpenFHE (CKKS).
@@ -38,7 +34,10 @@ to install. See [Trying it](#trying-it) below for the different ways to get your
 | 🦜 | **Kiwi** | parrot: wants you home and engaged, a long commitment, an experienced owner |
 
 Different answers light up different pets. The pets are just plaintext data in
-[`dsl/rubric.dat`](dsl/rubric.dat); swap or retune them without recompiling.
+[`dsl/rubric.dat`](dsl/rubric.dat); swap or retune them without recompiling. This app
+can also be extended to run a shelter's real roster (photos, needs, quirks) in place
+of these four demo pets, letting would-be adopters privately find the pet they're
+most likely to be approved for before filling out a single form.
 
 ## The questionnaire
 
@@ -65,13 +64,17 @@ A full run connects the two: your encrypted answers go to a checker, it scores t
 blind, and the encrypted result comes back for you to decrypt. Pick whichever setup
 suits you.
 
-**Just you, computer + phone (easiest).** On a computer, open the
-[live site](https://pet-adoption-8j98.onrender.com) and fill in the Survey. Tap
-**"Send to a checker"**; it shows a QR code. Scan that QR code with a phone
-and you'll land on the Checker. Score your encrypted survey there, then send the
-result back to the computer to decrypt. Here your phone just stands in as the checker.
+#### 📱 Just you: computer + phone (easiest)
 
-**Just you, one computer (no phone).** Two single-machine routes:
+On a computer, open the [live site](https://pet-adoption-8j98.onrender.com) and fill
+in the Survey. Tap **"Send to a checker"**; it shows a QR code. Scan that QR code with
+a phone and you'll land on the Checker. Score your encrypted survey there, then send
+the result back to the computer to decrypt. Here your phone just stands in as the
+checker.
+
+#### 💻 Just you: one computer (no phone)
+
+Two single-machine routes:
 - *Follow the link:* fill in the Survey and tap **"Send to a checker"**.
   Copy the checker link shown under the QR into a **new browser tab** (that tab
   becomes the Checker); it scores, and the result flows back to the Survey tab.
@@ -81,22 +84,20 @@ result back to the computer to decrypt. Here your phone just stands in as the ch
   and score. Finally, download the encrypted result and upload it back to the Survey
   to decrypt.
 
-**Two people.** You fill in the Survey; someone else opens the Checker on their
-device (scan your QR, or open a link you send), scores you blind, and the encrypted
-result comes back to you. They never see your answers or hold your key.
+#### 👥 Two people
+
+You fill in the Survey; someone else opens the Checker on their device (scan your QR,
+or open a link you send), scores you blind, and the encrypted result comes back to
+you. They never see your answers or hold your key.
 
 **Curious whether it's really encrypted?** At each step the app lets you peek at
 what's being handed over: high-entropy ciphertext, with your secret key visibly
 *not* in the bundle. So you can check for yourself that nothing readable ever
 leaves your device.
 
-> **It can take a moment.** Generating keys, encrypting, and moving the bundle all
-> happen on your own device before the result appears. How long depends on your
-> device and network, so give it a few moments after each step rather than expecting
-> instant responses.
-
-Doing the *whole* flow on a single phone (hand-downloading and re-uploading bundle
-files) is possible but fiddly on mobile, so we'd suggest a computer for the full run.
+> **Doing the whole flow on a single phone** (hand-downloading and re-uploading
+> bundle files) is possible but fiddly on mobile, so we'd suggest a computer for the
+> full run.
 
 ## Run it yourself (no build)
 
@@ -112,7 +113,7 @@ node web/relay.js          # prints a localhost URL, plus a LAN URL for the phon
 Open the printed URL to get the same Survey and Checker described above. To use a
 phone as the Checker, open the **LAN URL** it prints (not localhost) so the phone
 can reach the relay and scan the QR. More in [`web/README.md`](web/README.md), or
-just watch the ~80-second walkthrough [`demo.mp4`](demo.mp4).
+just watch the ~2-minute walkthrough [`demo.mp4`](demo.mp4).
 
 ## The FHE circuit
 
@@ -184,7 +185,7 @@ on a hosted relay) only ever holds ciphertext and public keys.
 ```
 README.md            this file
 DESIGN_NOTES.md      the 8-stage FHE design writeup + threat model
-demo.mp4          🟢 ~80-second narrated walkthrough (watch it)
+demo.mp4          🟢 ~2-minute narrated walkthrough (watch it)
 web/              🟢 the browser app, in-browser WASM FHE  (run: node web/relay.js)
   survey.html          "your device": keygen, questions, encrypt, decrypt
   checker.html         "the checker": blind scoring, no secret key
@@ -200,11 +201,12 @@ dsl/                 the FHE circuit (Niobium DSL)
   keygen.cpp, apply_weights_*  📖 hand-rolled keygen + cipher×plaintext bridge
 Dockerfile           single-service container for hosting the app
 LICENSE              Apache License 2.0
-NOTICE               third-party attributions (bundled QR-code generator, MIT)
+NOTICE               third-party attributions (OpenFHE, Emscripten, QR-code generator)
 ```
 
 ## License
 
-Apache License 2.0. See [`LICENSE`](LICENSE). Third-party components bundled in this
-repo (the QR-code generator under `web/vendor/`) are listed with their licenses in
-[`NOTICE`](NOTICE).
+Apache License 2.0. See [`LICENSE`](LICENSE). This repo also bundles third-party
+open-source components: the in-browser FHE engine (OpenFHE, BSD 2-Clause) compiled to
+WebAssembly with Emscripten (MIT), and the QR-code generator (MIT) under `web/vendor/`.
+Each is listed with its full license text in [`NOTICE`](NOTICE).

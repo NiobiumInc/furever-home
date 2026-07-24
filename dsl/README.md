@@ -1,4 +1,4 @@
-# Furever Home: the DSL pipeline (run on CPU or the Niobium FPGA)
+# Furever Home: build it natively from the DSL (CPU or Niobium FPGA)
 
 This folder holds the **encrypted scoring written in the Niobium FHE DSL** and a
 one-command build that produces a working CLI pipeline you can run **on a normal
