@@ -1,0 +1,15 @@
+# Render Blueprint: one declarative deploy of the single-service container.
+# Render builds the Dockerfile remotely (no local Docker), injects $PORT (relay.js
+# reads it), and gives an https://<name>.onrender.com link.
+#
+# Free plan note: the instance sleeps after ~15 min idle, so the first visit
+# after idle has a ~30-60s cold start. Everything else is $0, no card.
+services:
+  - type: web
+    name: furever-home
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /web/index.html
+    autoDeploy: true

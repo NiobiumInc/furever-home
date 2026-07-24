@@ -27,6 +27,7 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"          # the dsl/ dir
 NIOBIUM_CLIENT_ROOT="${NIOBIUM_CLIENT_ROOT:?set NIOBIUM_CLIENT_ROOT to your niobium-client checkout}"
+NIOBIUM_CLIENT_ROOT="$(cd "$NIOBIUM_CLIENT_ROOT" && pwd)"   # normalize to absolute (cmake resolves a relative path from nb_out/, not your shell CWD)
 PY="${PY:-python3}"
 CMAKE="${CMAKE:-cmake}"
 OUT="$HERE/nb_out"
