@@ -210,3 +210,7 @@ Apache License 2.0. See [`LICENSE`](LICENSE). This repo also bundles third-party
 open-source components: the in-browser FHE engine (OpenFHE, BSD 2-Clause) compiled to
 WebAssembly with Emscripten (MIT), and the QR-code generator (MIT) under `web/vendor/`.
 Each is listed with its full license text in [`NOTICE`](NOTICE).
+
+## Contributing
+
+This repository is Niobium's fork of [sw-zzz/furever-home](https://github.com/sw-zzz/furever-home). Please open issues and pull requests on the original repository. Issues are turned off here, and pull requests are limited to collaborators.
