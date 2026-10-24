@@ -2,9 +2,9 @@ THIRD-PARTY SOFTWARE NOTICES AND INFORMATION
 ============================================================
 
 Project: furever-home
-Generated: 2026-08-27
+Generated: 2026-10-24
 Tool: SCANOSS (snippet detection with License dataset)
-Components: 1
+Components: 2
 
 This file lists all third-party software components detected
 in this repository, along with their licenses and copyright
@@ -14,11 +14,20 @@ notices as required by those licenses.
 
 LICENSE SUMMARY
 
-  MIT: 1 component(s)
+  MIT: 2 component(s)
 
 ------------------------------------------------------------
 
 COMPONENT ATTRIBUTIONS
+
+  bilikara
+  Version: v0.8.0-preview.2
+  Source: https://github.com/VZRXS/bilikara
+  PURL: pkg:github/vzrxs/bilikara
+  Copyright:
+    Copyright 2009 Kazuhiko Arase
+    Copyright  c) 2009 Kazuhiko Arase
+  License: MIT
 
   qrcode-generator
   Version: 83b7e8f
